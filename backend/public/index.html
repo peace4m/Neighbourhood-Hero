@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neighbourhood Hero</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg:#f6f7f4; --card:#fff; --ink:#1d2a22; --mute:#66756c; --brand:#2f7d52; --line:#e3e7e1; --warn:#fff4d6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111713; --card:#1a231d; --ink:#e8efe9; --mute:#9bab9f; --brand:#4fbf80; --line:#2a362d; --warn:#3a3317; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:20px 16px 8px; max-width:1000px; margin:0 auto; }
+  h1 { margin:0; font-size:1.6rem; }
+  header p { margin:4px 0 0; color:var(--mute); }
+  main { max-width:1000px; margin:0 auto; padding:8px 16px 40px; display:grid; gap:16px; }
+  .banner { background:var(--warn); border-radius:10px; padding:10px 14px; font-size:.92rem; display:none; }
+  .grid { display:grid; gap:16px; grid-template-columns:1fr; }
+  @media (min-width:860px) { .grid { grid-template-columns: 1.1fr 1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  .card h2 { margin:0 0 10px; font-size:1.1rem; }
+  #map { height:340px; border-radius:10px; }
+  .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  button, select, input { font:inherit; }
+  .chip { border:1px solid var(--line); background:transparent; color:var(--ink); padding:4px 12px; border-radius:99px; cursor:pointer; }
+  .chip.on { background:var(--brand); border-color:var(--brand); color:#fff; }
+  .req { border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px; cursor:pointer; }
+  .req:hover { border-color:var(--brand); }
+  .req h3 { margin:0 0 2px; font-size:1rem; }
+  .req p { margin:0 0 6px; color:var(--mute); font-size:.92rem; }
+  .meta { display:flex; gap:8px; flex-wrap:wrap; font-size:.8rem; color:var(--mute); align-items:center; }
+  .tag { padding:1px 8px; border-radius:99px; background:var(--line); }
+  .tag.open { background:#d7f0e0; color:#1c5a37; }
+  .tag.accepted { background:#ffe9bf; color:#7a5200; }
+  .tag.completed { background:#dde3ff; color:#2c3a8c; }
+  .levels { width:100%; border-collapse:collapse; margin-top:10px; font-size:.92rem; }
+  .levels td { padding:6px 4px; border-top:1px solid var(--line); }
+  .row { display:flex; gap:8px; }
+  input[type=number] { flex:1; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:transparent; color:var(--ink); }
+  .go { background:var(--brand); color:#fff; border:0; padding:8px 16px; border-radius:8px; cursor:pointer; }
+  .bar { height:10px; border-radius:99px; background:var(--line); overflow:hidden; margin:10px 0 4px; }
+  .bar > div { height:100%; background:var(--brand); width:0; transition:width .3s; }
+  .empty { color:var(--mute); padding:12px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛡️ Neighbourhood Hero</h1>
+  <p>Ask for help, help your neighbours, earn karma.</p>
+</header>
+<main>
+  <div id="banner" class="banner"></div>
+  <div class="grid">
+    <section class="card">
+      <h2>Requests near you</h2>
+      <div class="filters" id="filters"></div>
+      <div id="map" role="img" aria-label="Map of help requests"></div>
+    </section>
+    <section class="card">
+      <h2>Open requests</h2>
+      <div id="list"><div class="empty">Loading…</div></div>
+    </section>
+  </div>
+  <section class="card">
+    <h2>Karma levels</h2>
+    <div class="row">
+      <input id="pts" type="number" min="0" placeholder="Enter karma points, e.g. 120" aria-label="Karma points">
+      <button class="go" id="check">Check level</button>
+    </div>
+    <div class="bar"><div id="barfill"></div></div>
+    <div id="lvl" class="meta"></div>
+    <table class="levels">
+      <tr><td>🌱 New Neighbor</td><td>0 – 49</td></tr>
+      <tr><td>⭐ Active Neighbor</td><td>50 – 199</td></tr>
+      <tr><td>🦸 Neighborhood Hero</td><td>200 – 499</td></tr>
+      <tr><td>👑 Neighborhood Legend</td><td>500+</td></tr>
+    </table>
+  </section>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const ICONS = { 'New Neighbor':'🌱', 'Active Neighbor':'⭐', 'Neighborhood Hero':'🦸', 'Neighborhood Legend':'👑' };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let all = [], filter = 'all', map = null, markers = {};
+
+function initMap(center) {
+  if (map || typeof L === 'undefined') return;
+  map = L.map('map').setView(center, 13);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+}
+
+function render() {
+  const rows = all.filter(r => filter === 'all' || r.status === filter);
+  $('list').innerHTML = rows.length ? rows.map(r => `
+    <div class="req" data-id="${esc(r.id)}">
+      <h3>${esc(r.title)}</h3>
+      <p>${esc(r.description || '')}</p>
+      <div class="meta">
+        <span class="tag ${esc(r.status)}">${esc(r.status)}</span>
+        ${r.category ? `<span class="tag">${esc(r.category)}</span>` : ''}
+        <span>${ICONS[r.karmaLevel] || ''} ${esc(r.username)} · ${esc(r.karmaLevel)}</span>
+      </div>
+    </div>`).join('') : '<div class="empty">No requests here yet.</div>';
+
+  if (map) {
+    Object.values(markers).forEach(m => m.remove());
+    markers = {};
+    rows.filter(r => typeof r.lat === 'number' && typeof r.lng === 'number').forEach(r => {
+      markers[r.id] = L.marker([r.lat, r.lng]).addTo(map).bindPopup(`<b>${esc(r.title)}</b><br>${esc(r.status)}`);
+    });
+  }
+  document.querySelectorAll('.req').forEach(el => el.onclick = () => {
+    const m = markers[el.dataset.id];
+    if (m && map) { map.setView(m.getLatLng(), 15); m.openPopup(); }
+  });
+}
+
+function renderFilters() {
+  $('filters').innerHTML = ['all','open','accepted','completed'].map(f =>
+    `<button class="chip ${f===filter?'on':''}" data-f="${f}">${f[0].toUpperCase()+f.slice(1)}</button>`).join('');
+  document.querySelectorAll('.chip').forEach(b => b.onclick = () => { filter = b.dataset.f; renderFilters(); render(); });
+}
+
+async function load() {
+  try {
+    const res = await fetch('/api/requests');
+    const data = await res.json();
+    all = data.requests || [];
+    if (data.demo) {
+      const b = $('banner');
+      b.style.display = 'block';
+      b.textContent = 'Showing sample requests. Connect the database (SUPABASE_URL and SUPABASE_KEY) to see real ones.';
+    }
+    const first = all.find(r => typeof r.lat === 'number');
+    initMap(first ? [first.lat, first.lng] : [20.59, 78.96]);
+    renderFilters(); render();
+  } catch (e) {
+    $('list').innerHTML = '<div class="empty">Could not load requests. Please refresh.</div>';
+  }
+}
+
+async function checkLevel() {
+  const p = Math.max(0, parseInt($('pts').value, 10) || 0);
+  try {
+    const r = await (await fetch('/api/karma-level/' + p)).json();
+    const thresholds = [0, 50, 200, 500];
+    const i = thresholds.filter(t => p >= t).length - 1;
+    const next = thresholds[i + 1];
+    $('barfill').style.width = (next ? Math.round(((p - thresholds[i]) / (next - thresholds[i])) * 100) : 100) + '%';
+    $('lvl').textContent = `${ICONS[r.level] || ''} ${r.level} · ${p} points` + (next ? ` · ${next - p} to next level` : ' · max level');
+  } catch (e) { $('lvl').textContent = 'Could not check level.'; }
+}
+$('check').onclick = checkLevel;
+$('pts').addEventListener('keydown', e => { if (e.key === 'Enter') checkLevel(); });
+load();
+</script>
+</body>
+</html>

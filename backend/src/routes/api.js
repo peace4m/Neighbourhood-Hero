@@ -2,6 +2,60 @@ const express = require('express');
 const router = express.Router();
 const { getSupabase } = require('../supabase');
 const { awardKarma, getUserProfile, getKarmaLevel } = require('../services/karmaService');
+const { parseLocation } = require('../geo');
+
+const DEMO_REQUESTS = [
+  { id: 'demo-1', title: 'Help carrying groceries upstairs', description: 'Two heavy bags, third floor, no lift.', status: 'open', category: 'Errands', lat: 28.6139, lng: 77.2090, username: 'Asha', karma_points: 120 },
+  { id: 'demo-2', title: 'Locked out - need a spare key run', description: 'Roommate has the spare, can someone drive me 10 mins?', status: 'open', category: 'Urgent', lat: 28.6200, lng: 77.2150, username: 'Ravi', karma_points: 260 },
+  { id: 'demo-3', title: 'Move a small sofa', description: 'Need one extra pair of hands this Saturday.', status: 'accepted', category: 'Moving', lat: 28.6080, lng: 77.2000, username: 'Meera', karma_points: 45 },
+  { id: 'demo-4', title: 'Fix a leaking kitchen tap', description: 'Have the parts, need someone who knows plumbing.', status: 'open', category: 'Repairs', lat: 28.6180, lng: 77.2030, username: 'Kabir', karma_points: 520 }
+];
+
+router.get('/status', (req, res) => {
+  res.json({
+    ok: true,
+    database: !!(process.env.SUPABASE_URL && process.env.SUPABASE_KEY) ? 'configured' : 'not configured (demo mode)'
+  });
+});
+
+router.get('/requests', async (req, res) => {
+  const configured = !!(process.env.SUPABASE_URL && process.env.SUPABASE_KEY);
+  const withLevel = (r) => ({ ...r, karmaLevel: getKarmaLevel(r.karma_points || 0) });
+
+  if (!configured) {
+    return res.json({ demo: true, requests: DEMO_REQUESTS.map(withLevel) });
+  }
+
+  try {
+    const { data, error } = await getSupabase()
+      .from('help_requests')
+      .select('id,title,description,status,category,location,created_at,profiles:user_id(username,karma_points)')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) throw error;
+
+    const requests = (data || []).map((r) => {
+      const pos = parseLocation(r.location) || {};
+      return withLevel({
+        id: r.id,
+        title: r.title,
+        description: r.description,
+        status: r.status,
+        category: r.category,
+        created_at: r.created_at,
+        lat: pos.lat,
+        lng: pos.lng,
+        username: r.profiles?.username || 'Neighbor',
+        karma_points: r.profiles?.karma_points || 0
+      });
+    });
+    res.json({ demo: false, requests });
+  } catch (error) {
+    console.error('List requests error:', error);
+    // Stay functional: fall back to demo data and say why.
+    res.json({ demo: true, warning: error.message, requests: DEMO_REQUESTS.map(withLevel) });
+  }
+});
 
 router.post('/complete-task', async (req, res) => {
   const { requestId, helperId } = req.body;

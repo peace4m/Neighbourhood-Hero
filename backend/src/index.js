@@ -8,13 +8,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get('/', (req, res) => {
-  res.json({
-    name: 'Neighbourhood Hero API',
-    status: 'ok',
-    endpoints: ['/health', '/api/user/:userId', '/api/karma-level/:points', '/api/complete-task', '/api/karma/award']
-  });
-});
+app.use(express.static(require('path').join(__dirname, '../public')));
 
 app.use('/api', apiRoutes);
 
@@ -23,6 +17,9 @@ app.get('/health', (req, res) => {
 });
 
 app.use((req, res) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api')) {
+    return res.sendFile(require('path').join(__dirname, '../public/index.html'));
+  }
   res.status(404).json({ error: 'Not found' });
 });
 
