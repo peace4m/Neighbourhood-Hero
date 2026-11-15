@@ -1,21 +1,8 @@
-require('dotenv').config();
-require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
-const { createClient } = require('@supabase/supabase-js');
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  console.error('Missing Supabase credentials in .env file');
-  console.log('SUPABASE_URL:', supabaseUrl);
-  console.log('SUPABASE_KEY:', supabaseKey ? '[SET]' : '[NOT SET]');
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+const { getSupabase } = require('../supabase');
 
 const awardKarma = async (targetUserId, amount) => {
   try {
-    const { data, error } = await supabase.rpc('add_karma', {
+    const { data, error } = await getSupabase().rpc('add_karma', {
       target_user_id: targetUserId,
       amount: amount
     });
@@ -31,7 +18,7 @@ const awardKarma = async (targetUserId, amount) => {
 
 const getUserProfile = async (userId) => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabase()
       .from('profiles')
       .select('*')
       .eq('id', userId)

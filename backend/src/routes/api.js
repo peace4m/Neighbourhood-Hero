@@ -1,16 +1,7 @@
-require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 const express = require('express');
 const router = express.Router();
-const { createClient } = require('@supabase/supabase-js');
+const { getSupabase } = require('../supabase');
 const { awardKarma, getUserProfile, getKarmaLevel } = require('../services/karmaService');
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_KEY;
-
-console.log('API Route - SUPABASE_URL:', supabaseUrl ? '[SET]' : '[NOT SET]');
-console.log('API Route - SUPABASE_KEY:', supabaseServiceKey ? '[SET]' : '[NOT SET]');
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 router.post('/complete-task', async (req, res) => {
   const { requestId, helperId } = req.body;
@@ -20,7 +11,7 @@ router.post('/complete-task', async (req, res) => {
   }
 
   try {
-    const { data: request, error: requestError } = await supabase
+    const { data: request, error: requestError } = await getSupabase()
       .from('help_requests')
       .select('*, profiles:user_id(karma_points)')
       .eq('id', requestId)
@@ -44,7 +35,7 @@ router.post('/complete-task', async (req, res) => {
       throw new Error(karmaResult.error);
     }
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await getSupabase()
       .from('help_requests')
       .update({ 
         status: 'completed',
